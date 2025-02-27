@@ -2,96 +2,102 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local StarterGui = game:GetService("StarterGui")
 
 -- Configuration
 local API_URL = "http://77.90.25.242:3000/send"
 local GROUP_ID = "120363390819557854@g.us"
 
+-- Create Logger GUI
+local function createLoggerGUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "LoggerGUI"
+    ScreenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0, 250, 0, 50)
+    Frame.Position = UDim2.new(0.5, -125, 0, 20)
+    Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    Frame.BackgroundTransparency = 0.3
+    Frame.Parent = ScreenGui
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Label.TextScaled = true
+    Label.Text = "Logger Running..."
+    Label.Font = Enum.Font.SourceSansBold
+    Label.Parent = Frame
+end
+
 -- Function to send logs
 local function sendLog(logType, message)
-    local jsonData = HttpService:JSONEncode({
+    local data = {
         groupId = GROUP_ID,
-        message = string.format("[%s] %s", logType, message)
-    })
+        message = "[" .. logType .. "] " .. message
+    }
+    
+    local success, response = pcall(function()
+        return HttpService:PostAsync(API_URL, HttpService:JSONEncode(data), Enum.HttpContentType.ApplicationJson)
+    end)
 
-    -- Detect the correct HTTP request function
-    local requestFunction = request or (syn and syn.request) or http_request
-
-    if requestFunction then
-        local success, response = pcall(function()
-            return requestFunction({
-                Url = API_URL,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = jsonData
-            })
-        end)
-
-        if success then
-            print("✅ Log Sent: " .. message)
-        else
-            warn("⚠️ Failed to send log: " .. tostring(response))
-        end
+    if success then
+        print("Log sent:", message)
     else
-        warn("⚠️ Your executor does not support HTTP requests.")
+        warn("Failed to send log:", response)
     end
 end
 
--- Log Player Join & Leave
+-- Logging player join/leave
 Players.PlayerAdded:Connect(function(player)
-    sendLog("Player Join", player.Name .. " joined the game.")
+    sendLog("JOIN", player.Name .. " has joined the game.")
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-    sendLog("Player Leave", player.Name .. " left the game.")
+    sendLog("LEAVE", player.Name .. " has left the game.")
 end)
 
--- Log Chat Messages
+-- Logging player chat messages
+local function onChat(player, message)
+    sendLog("CHAT", player.Name .. ": " .. message)
+end
+
 Players.PlayerAdded:Connect(function(player)
     player.Chatted:Connect(function(message)
-        sendLog("Chat", player.Name .. ": " .. message)
+        onChat(player, message)
     end)
 end)
 
--- Log Fruit Pickups
-ReplicatedStorage.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") and child.Name:find("Fruit") then
-        sendLog("Fruit Pickup", Players.LocalPlayer.Name .. " picked up a " .. child.Name)
-    end
-end)
-
--- Log Boss Kills
-ReplicatedStorage.ChildRemoved:Connect(function(child)
-    if child.Name:find("Boss") then
-        sendLog("Boss Defeat", Players.LocalPlayer.Name .. " defeated " .. child.Name)
-    end
-end)
-
--- Log Weapon Pickups
-ReplicatedStorage.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") and (child.Name:find("Katana") or child.Name:find("Gun")) then
-        sendLog("Weapon Pickup", Players.LocalPlayer.Name .. " obtained " .. child.Name)
-    end
-end)
-
--- Placeholder for Damage Events
--- Implement actual damage tracking logic here
-local function onDamageEvent(attacker, victim, damage)
-    if attacker and victim then
-        sendLog("Damage", attacker.Name .. " dealt " .. tostring(damage) .. " damage to " .. victim.Name)
+-- Logging player deaths
+local function onCharacterAdded(character, player)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.Died:Connect(function()
+            sendLog("DEATH", player.Name .. " has died.")
+        end)
     end
 end
 
--- Placeholder for Purchase Events
--- Implement actual purchase tracking logic here
-local function onPurchase(player, item)
-    sendLog("Purchase", player.Name .. " bought " .. item)
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(character)
+        onCharacterAdded(character, player)
+    end)
+end)
+
+-- Logging errors
+local function onError(message)
+    sendLog("ERROR", "Game Error: " .. message)
 end
 
--- Placeholder for Ability Usage Events
--- Implement actual ability usage tracking logic here
-local function onAbilityUsed(player, ability)
-    sendLog("Ability", player.Name .. " used " .. ability)
-end
+game:GetService("LogService").MessageOut:Connect(function(message, messageType)
+    if messageType == Enum.MessageType.ErrorMessage then
+        onError(message)
+    end
+end)
 
-print("🔥 Blox Fruits Advanced Logger Loaded! 🔥")
+-- Run GUI
+createLoggerGUI()
+
+-- Example test log
+sendLog("INFO", "Logger has started successfully.")
